@@ -127,7 +127,12 @@ public class SVCallRecord implements Feature {
 
         final boolean startStrand = isDel ? true : false;
         final boolean endStrand = isDel ? false : true;
-        final StructuralVariantType type = isDel ? StructuralVariantType.DEL : StructuralVariantType.DUP;
+        final StructuralVariantType type;
+        if (variant.getAlternateAlleles().contains(GATKSVVCFConstants.DUP_ALLELE) && variant.getAlternateAlleles().contains(GATKSVVCFConstants.DEL_ALLELE)) {
+            type = StructuralVariantType.CNV;
+        } else {
+            type = isDel ? StructuralVariantType.DEL : StructuralVariantType.DUP;
+        }
 
         final String startContig = variant.getContig();
         final int start = variant.getStart();

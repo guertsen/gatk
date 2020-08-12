@@ -228,7 +228,7 @@ public final class GermlineCNVSegmentVariantComposer extends GermlineCNVVariantC
         variantContextBuilder.attribute(VCFConstants.END_KEY, end);
 
         //copy over allele frequency etc.
-        double alleleFrequency = 0;
+        List<Double> alleleFrequency = new ArrayList<>();
         if (clusteredVCFReader != null) {
             try {
                 final VariantContext cohortVC = clusteredVCFReader.query(
@@ -237,7 +237,7 @@ public final class GermlineCNVSegmentVariantComposer extends GermlineCNVVariantC
                 if (!(cohortVC == null)) {
                     copyAnnotationIfPresent(cohortVC, variantContextBuilder, VCFConstants.ALLELE_COUNT_KEY, GATKVCFConstants.ORIGINAL_AC_KEY);
                     copyAnnotationIfPresent(cohortVC, variantContextBuilder, VCFConstants.ALLELE_FREQUENCY_KEY, GATKVCFConstants.ORIGINAL_AF_KEY);
-                    alleleFrequency = cohortVC.getAttributeAsDouble(VCFConstants.ALLELE_FREQUENCY_KEY, 0);
+                    alleleFrequency = cohortVC.getAttributeAsDoubleList(VCFConstants.ALLELE_FREQUENCY_KEY, 0.0);
                     copyAnnotationIfPresent(cohortVC, variantContextBuilder, VCFConstants.ALLELE_NUMBER_KEY, GATKVCFConstants.ORIGINAL_AN_KEY);
                     copyAnnotationIfPresent(cohortVC, variantContextBuilder, GATKSVVCFConstants.SVTYPE, GATKSVVCFConstants.SVTYPE);
                     copyAnnotationIfPresent(cohortVC, variantContextBuilder, GATKSVVCFConstants.SVLEN, GATKSVVCFConstants.SVLEN);
@@ -274,7 +274,7 @@ public final class GermlineCNVSegmentVariantComposer extends GermlineCNVVariantC
         }
     }
 
-    private Set<String> getInfoFilters(final IntegerCopyNumberSegment segment, final double alleleFrequency) {
+    private Set<String> getInfoFilters(final IntegerCopyNumberSegment segment, final List<Double> alleleFrequency) {
         final Set<String> returnFilters = new LinkedHashSet<>();
         final int qsThreshold;
         if (segment.getCallIntegerCopyNumberState().getCopyNumber() == 0) {
@@ -289,7 +289,7 @@ public final class GermlineCNVSegmentVariantComposer extends GermlineCNVVariantC
         if (segment.getQualitySomeCalled() < qsThreshold) {
             returnFilters.add(GATKSVVCFConstants.LOW_QS_SCORE_FILTER_KEY);
         }
-        if (alleleFrequency >= siteFreqThreshold) {
+        if (alleleFrequency.stream().allMatch(af -> af >= siteFreqThreshold)) {
             returnFilters.add(GATKSVVCFConstants.FREQUENCY_FILTER_KEY);
         }
 

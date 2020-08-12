@@ -74,7 +74,7 @@ public class SVClusterEngine extends LocatableClusterEngine<SVCallRecordWithEvid
         final int length = exampleCall.getContig().equals(exampleCall.getEndContig()) && !exampleCall.getType().equals(StructuralVariantType.INS) ? medianEnd - medianStart + 1 : exampleCall.getLength();
         final List<String> algorithms = cluster.stream().flatMap(v -> v.getAlgorithms().stream()).distinct().collect(Collectors.toList());
         final List<Genotype> clusterSamples = cluster.stream().flatMap(v -> v.getGenotypes().stream()).collect(Collectors.toList());
-        final List<StructuralVariantType> observedTypes = cluster.stream().map(SVCallRecord::getType).collect(Collectors.toList());
+        final List<StructuralVariantType> observedTypes = cluster.stream().map(SVCallRecord::getType).distinct().collect(Collectors.toList());
         final StructuralVariantType clusterType = observedTypes.size() == 1 ? observedTypes.get(0) : StructuralVariantType.CNV;
 
         final int newStart;

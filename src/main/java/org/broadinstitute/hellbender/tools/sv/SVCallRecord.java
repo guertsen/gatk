@@ -79,7 +79,7 @@ public class SVCallRecord implements Feature {
         if (variant.getGenotypes().size() == 1) {
             //only cluster good variants
             final Genotype g = variant.getGenotypes().get(0);
-            if (g.isHomRef() || g.isNoCall() || Integer.valueOf((String) g.getExtendedAttribute(GermlineCNVSegmentVariantComposer.QS)) < minQuality) {
+            if (g.isHomRef() || (g.isNoCall() && !g.hasExtendedAttribute(GATKSVVCFConstants.COPY_NUMBER_FORMAT)) || Integer.valueOf((String) g.getExtendedAttribute(GermlineCNVSegmentVariantComposer.QS)) < minQuality) {
                 return null;
             }
         }
@@ -171,7 +171,7 @@ public class SVCallRecord implements Feature {
         this.algorithms = algorithms;
         this.genotypes = genotypes;
         this.samples = genotypes.stream()
-                .filter(Genotype::isCalled)
+                .filter(g -> g.hasExtendedAttribute(GATKSVVCFConstants.COPY_NUMBER_FORMAT)) //real no-calls won't have copy number
                 .map(Genotype::getSampleName)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }

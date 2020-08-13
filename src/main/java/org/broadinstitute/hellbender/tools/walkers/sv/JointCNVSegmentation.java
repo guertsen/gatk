@@ -330,7 +330,7 @@ public class JointCNVSegmentation extends MultiVariantWalkerGroupedOnStart {
                 if (vc.hasGenotype(sample) && alleles.contains(GATKSVVCFConstants.DEL_ALLELE)) {
                     final Long temp = alleleCountMap.get(GATKSVVCFConstants.DEL_ALLELE);
                     alleleCountMap.put(GATKSVVCFConstants.DEL_ALLELE, temp + alleles.stream().filter(Allele::isNonReference).count());
-                } else if (vc.hasGenotype(sample) && alleles.contains(GATKSVVCFConstants.DUP_ALLELE)) {
+                } else if (vc.hasGenotype(sample) && (copyNumber > samplePloidy)) {
                     final Long temp = alleleCountMap.get(GATKSVVCFConstants.DUP_ALLELE);
                     alleleCountMap.put(GATKSVVCFConstants.DUP_ALLELE, temp + 1); //best we can do for dupes is carrier frequency
                 }

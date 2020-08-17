@@ -122,6 +122,20 @@ public class JointCNVSegmentation extends MultiVariantWalkerGroupedOnStart {
     public void onTraversalStart() {
         sampleDB = initializeSampleDB();
 
+        if (sampleDB == null) {
+            logger.warn("No pedigree file supplied for sex genotype calls. Ploidy will be inferred from segments VCF genotype ploidy.");
+        }
+
+        final Collection<String> samples = getSamplesForVariants();
+        if (samples != null) {
+            for (String sample : samples) {
+                if (sampleDB.getSample(sample) == null) {
+                    logger.warn("Sample " + sample + " is missing from the supplied pedigree file. Ploidy will be inferred from segments VCF genotype ploidy.");
+                }
+            }
+        }
+
+
         dictionary = getBestAvailableSequenceDictionary();
         //dictionary will not be null because this tool requiresReference()
 
@@ -146,7 +160,7 @@ public class JointCNVSegmentation extends MultiVariantWalkerGroupedOnStart {
      * Entry-point function to initialize the samples database from input data
      */
     private SampleDB initializeSampleDB() {
-        final SampleDBBuilder sampleDBBuilder = new SampleDBBuilder(PedigreeValidationType.STRICT);
+        final SampleDBBuilder sampleDBBuilder = new SampleDBBuilder(PedigreeValidationType.STRICT);  //strict will warn about missing samples
         if (pedigreeFile != null) {
             sampleDBBuilder.addSamplesFromPedigreeFiles(Collections.singletonList(pedigreeFile));
         }
@@ -191,8 +205,7 @@ public class JointCNVSegmentation extends MultiVariantWalkerGroupedOnStart {
         }
         for (final VariantContext vc : variantContexts) {
             if (vc.getGenotypes().size() != 1) {
-                //throw new UserException.BadInput("JointCNVSegmentation tool operates on single-sample segments VCFs.");
-                logger.info("Multi-sample GVCFs found, which are assumed to be pre-clustered. Skipping defragmentation.");
+                oneShotLogger.warn("Multi-sample VCFs found, which are assumed to be pre-clustered. Skipping defragmentation.");
                 doDefragmentation = false;
             } else {
                 doDefragmentation = true;
@@ -324,7 +337,17 @@ public class JointCNVSegmentation extends MultiVariantWalkerGroupedOnStart {
                 samplePloidy = getSamplePloidy(sample, vc.getContig(), g);
                 final int copyNumber = g != null ? Integer.parseInt(g.getExtendedAttribute(GATKSVVCFConstants.COPY_NUMBER_FORMAT, samplePloidy).toString()) :
                         samplePloidy;
-                final List<Allele> alleles = GATKSVVariantContextUtils.makeGenotypeAlleles(copyNumber, samplePloidy, vcRefAllele);
+                final List<Allele> alleles;
+                if (doDefragmentation || g == null) {  //if it's a multi-sample VCF we can trust the input genotypes
+                    alleles = GATKSVVariantContextUtils.makeGenotypeAlleles(copyNumber, samplePloidy, vcRefAllele);
+                } else {
+                    alleles = g.getAlleles();
+                    for (Allele a : alleles) {
+                        if (a.isReference()) {
+                            a = vcRefAllele;
+                        }
+                    }
+                }
                 genotypeBuilder.alleles(alleles);
                 //check for genotype in VC because we don't want to count overlapping events (in sampleCopyNumbers map) towards AC
                 if (vc.hasGenotype(sample) && alleles.contains(GATKSVVCFConstants.DEL_ALLELE)) {
@@ -359,7 +382,14 @@ public class JointCNVSegmentation extends MultiVariantWalkerGroupedOnStart {
             } else {
                 final List<Long> alleleCounts = new ArrayList<>();
                 final List<Double> alleleFreqs = new ArrayList<>();
-                for (final Allele a : vc.getAlternateAlleles()) {
+                //if we merged and del and a dupe from different callsets, then make sure the VC has both alleles
+                //if (alleleCountMap.get(GATKSVVCFConstants.DEL_ALLELE) > 0 && alleleCountMap.get(GATKSVVCFConstants.DUP_ALLELE) > 0) {
+                //    builder.alleles(vc.getReference().getDisplayString(), GATKSVVCFConstants.DUP_ALLELE.getDisplayString(), GATKSVVCFConstants.DEL_ALLELE.getDisplayString());
+                //}
+                for (final Allele a : builder.getAlleles()) {
+                    if (a.isReference()) {
+                        continue;
+                    }
                     alleleCounts.add(alleleCountMap.containsKey(a) ? alleleCountMap.get(a) : 0L);
                     alleleFreqs.add(alleleCountMap.containsKey(a) ? Double.valueOf(alleleCountMap.get(a)) / alleleNumber : 0L);
                 }
@@ -384,17 +414,10 @@ public class JointCNVSegmentation extends MultiVariantWalkerGroupedOnStart {
         }
         int samplePloidy = 1;
         if (sampleDB == null || sampleDB.getSample(sampleName) == null) {
-            if (sampleDB == null) {
-                oneShotLogger.warn("No pedigree file supplied for sex genotype inferrence.");
-            } else {
-                logger.warn("Pedigree file did not contain sample " + sampleName + ".");
-            }
             if (g != null) {
-                oneShotLogger.warn("Sample " + g.getSampleName() + " ploidy will be determined from segments VCF genotype ploidy.");
                 samplePloidy = g.getPloidy();
             } else {
-                oneShotLogger.warn("Sample " + sampleName + " assumed to have ploidy 1 on contig " + contig + ".");
-                samplePloidy = 1;
+                oneShotLogger.warn("Samples missing from pedigree assumed to have ploidy 1 on allosomes.");
             }
 
         }
@@ -438,8 +461,16 @@ public class JointCNVSegmentation extends MultiVariantWalkerGroupedOnStart {
         final List<Genotype> genotypes = new ArrayList<>();
         for (final Genotype g : call.getGenotypes()) {
             final GenotypeBuilder genotypeBuilder = new GenotypeBuilder(g);
-            //update alleles
-            genotypeBuilder.alleles(GATKVariantContextUtils.noCallAlleles(getSamplePloidy(g.getSampleName(), call.getContig(), g)));
+            //update reference alleles
+            List<Allele> newGenotypeAlleles = new ArrayList<>();
+            for (Allele a : g.getAlleles()) {
+                if (a.isReference()) {
+                    newGenotypeAlleles.add(refAllele);
+                } else {
+                    newGenotypeAlleles.add(a);
+                }
+            }
+            genotypeBuilder.alleles(newGenotypeAlleles);
              if (g.hasAnyAttribute(GermlineCNVSegmentVariantComposer.CN)) {
                 genotypeBuilder.attribute(GermlineCNVSegmentVariantComposer.CN, g.getExtendedAttribute(GermlineCNVSegmentVariantComposer.CN));
             }

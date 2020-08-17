@@ -1,5 +1,6 @@
 package org.broadinstitute.hellbender.tools.walkers.sv;
 
+import htsjdk.variant.variantcontext.Allele;
 import htsjdk.variant.variantcontext.Genotype;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.vcf.VCFHeader;
@@ -33,7 +34,7 @@ public class JointCNVSegmentationIntegrationTest extends CommandLineProgramTest 
     @DataProvider
     public Object[][] postprocessOutputs() {
         return new Object[][] {
-               new Object[]{SEGMENTS_VCF_CORRECT_OUTPUTS}
+               new Object[]{SEGMENTS_VCF_CORRECT_OUTPUTS, 5},
         };
     }
 
@@ -63,7 +64,7 @@ public class JointCNVSegmentationIntegrationTest extends CommandLineProgramTest 
     }
 
     @Test(dataProvider = "postprocessOutputs")
-    public void testThreeGCNVSamples(List<File> inputVcfs) {
+    public void testThreeGCNVSamples(final List<File> inputVcfs, final int expectedCountDefault, final int expectedCount) {
         final File output = createTempFile("threeSamples", ".vcf");
 
         final ArgumentsBuilder args = new ArgumentsBuilder()
@@ -77,7 +78,9 @@ public class JointCNVSegmentationIntegrationTest extends CommandLineProgramTest 
         runCommandLine(args, JointCNVSegmentation.class.getSimpleName());
 
         final Pair<VCFHeader, List<VariantContext>> withQStreshold = VariantContextTestUtils.readEntireVCFIntoMemory(output.getAbsolutePath());
-        Assert.assertEquals(withQStreshold.getRight().size(), 7);
+        Assert.assertEquals(withQStreshold.getRight().size(), expectedCountDefault);
+        Assert.assertTrue(withQStreshold.getRight().stream().noneMatch(vc -> vc.getContig().equals("1") || vc.getContig().equals("Y")));  //1 and Y are reference on all samples
+        Assert.assertTrue(withQStreshold.getRight().stream().noneMatch(vc -> vc.getReference().equals(Allele.REF_N))); //by supplying a reference we can fill in ref bases
 
         final File output2 = createTempFile("threeSamples.noQSthreshold",".vcf");
 
@@ -92,8 +95,7 @@ public class JointCNVSegmentationIntegrationTest extends CommandLineProgramTest 
         runCommandLine(args2, JointCNVSegmentation.class.getSimpleName());
 
         final Pair<VCFHeader, List<VariantContext>> withoutQStreshold = VariantContextTestUtils.readEntireVCFIntoMemory(output2.getAbsolutePath());
-        Assert.assertEquals(withoutQStreshold.getRight().size(), 8);
-        //extra variant at X:227988
+        Assert.assertEquals(withoutQStreshold.getRight().size(), expectedCount + 1); //extra variant at X:227988
 
         //another test to make sure adjacent events with different copy numbers don't get merged/defragmented?
     }
@@ -114,6 +116,22 @@ public class JointCNVSegmentationIntegrationTest extends CommandLineProgramTest 
         final Pair<VCFHeader, List<VariantContext>> defragmentedEvents = VariantContextTestUtils.readEntireVCFIntoMemory(output.getAbsolutePath());
         Assert.assertEquals(defragmentedEvents.getRight().size(), 1);
         Assert.assertEquals(defragmentedEvents.getRight().get(0).getAttributeAsInt(GATKSVVCFConstants.SVLEN,0), 62113369);
+
+        final File output2 = createTempFile("notDefragmented",".vcf");
+        final ArgumentsBuilder args2 = new ArgumentsBuilder()
+                .addOutput(output2)
+                .addReference(GATKBaseTest.b37Reference)
+                .addVCF(getToolTestDataDir() + "adjacentDifferentCN.vcf")
+                .add(JointCNVSegmentation.MODEL_CALL_INTERVALS, getToolTestDataDir() + "intervals.chr8snippet.interval_list")
+                .addInterval("8:190726-666104");
+
+        runCommandLine(args2, JointCNVSegmentation.class.getSimpleName());
+
+        final Pair<VCFHeader, List<VariantContext>> notDefragmentedEvents = VariantContextTestUtils.readEntireVCFIntoMemory(output2.getAbsolutePath());
+        Assert.assertEquals(notDefragmentedEvents.getRight().size(), 3);
+        Assert.assertEquals(Integer.parseInt(notDefragmentedEvents.getRight().get(0).getGenotype("NA20520").getExtendedAttribute(GATKSVVCFConstants.COPY_NUMBER_FORMAT).toString()), 3);
+        Assert.assertEquals(Integer.parseInt(notDefragmentedEvents.getRight().get(1).getGenotype("NA20520").getExtendedAttribute(GATKSVVCFConstants.COPY_NUMBER_FORMAT).toString()), 4);
+        Assert.assertEquals(Integer.parseInt(notDefragmentedEvents.getRight().get(2).getGenotype("NA20520").getExtendedAttribute(GATKSVVCFConstants.COPY_NUMBER_FORMAT).toString()), 3);
     }
 
     @Test(dataProvider = "overlappingSamples")

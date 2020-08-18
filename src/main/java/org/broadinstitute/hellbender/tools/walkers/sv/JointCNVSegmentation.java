@@ -457,7 +457,11 @@ public class JointCNVSegmentation extends MultiVariantWalkerGroupedOnStart {
                 outputAlleles);
         builder.attribute(VCFConstants.END_KEY, call.getEnd());
         builder.attribute(GATKSVVCFConstants.SVLEN, call.getLength());
-        builder.attribute(VCFConstants.SVTYPE, call.getType());
+        if (call.getType().equals(StructuralVariantType.CNV)) {
+            builder.attribute(VCFConstants.SVTYPE, "MCNV");
+        } else {
+            builder.attribute(VCFConstants.SVTYPE, call.getType());
+        }
         final List<Genotype> genotypes = new ArrayList<>();
         for (final Genotype g : call.getGenotypes()) {
             final GenotypeBuilder genotypeBuilder = new GenotypeBuilder(g);

@@ -528,6 +528,7 @@ task CollectSampleQualityMetrics {
       File genotyped_segments_vcf
       String entity_id
       Int maximum_number_events
+      Int maximum_number_pass_events
 
       # Runtime parameters
       String gatk_docker
@@ -542,9 +543,13 @@ task CollectSampleQualityMetrics {
 
     command <<<
         set -eu
-        NUM_SEGMENTS=$(gunzip -c ~{genotyped_segments_vcf} | grep -v '#' | wc -l)
+        NUM_SEGMENTS=$(zgrep -c '^#' ~{genotyped_segments_vcf})
+        NUM_PASS_SEGMENTS=$(zgrep -c '^#.*PASS' ~{genotyped_segments_vcf})
         if [ $NUM_SEGMENTS -lt ~{maximum_number_events} ]; then
-            echo "PASS" >> ~{entity_id}.qcStatus.txt
+            if [ $NUM_PASS_SEGMENTS -lt ~{maximum_number_pass_events} ]; then
+              echo "PASS" >> ~{entity_id}.qcStatus.txt
+            else
+              echo "EXCESSIVE_NUMBER_OF_PASS_EVENTS" >> ~{entity_id}.qcStatus.txt
         else 
             echo "EXCESSIVE_NUMBER_OF_EVENTS" >> ~{entity_id}.qcStatus.txt
         fi

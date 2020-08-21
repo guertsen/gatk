@@ -1,7 +1,7 @@
 version 1.0
 
 import "../cnv_common_tasks.wdl" as CNVTasks
-import "AnnotateChromosome.wdl" as AnnotateVcf
+import "https://raw.githubusercontent.com/broadinstitute/gatk-sv/master/wdl/AnnotateChromosome.wdl" as AnnotateVcf
 import "cnv_germline_case_scattered_workflow.wdl" as ScatterWorkflow
 
 workflow JointCallExomeCNVs {
@@ -30,6 +30,11 @@ workflow JointCallExomeCNVs {
       File contig_ploidy_calls_tar
       Array[String]? allosomal_contigs
       Int ref_copy_number_autosomal_contigs
+
+      #qc arguments
+      Int maximum_number_events
+      Int maximum_number_pass_events
+
       File ref_fasta_dict
       File ref_fasta_fai
       File ref_fasta
@@ -116,12 +121,29 @@ workflow JointCallExomeCNVs {
               clustered_vcf_index = GatherJointSegmentation.clustered_vcf_index,
               gatk_docker = gatk_docker_clustering
       }
+
+      call CNVTasks.CollectSampleQCMetrics as SampleQC {
+        input:
+          genotyped_segments_vcf = RecalcQual.genotyped_segments_vcf,
+          entity_id = sub(sub(basename(intervals_vcf[scatter_index]), ".vcf.gz", ""), "intervals_output_", ""),
+          maximum_number_events = maximum_number_events,
+          maximum_number_pass_events = maximum_number_pass_events
+      }
     }
+
+    scatter(idx in range(length(RecalcQual.genotyped_segments_vcf))) {
+      if(SampleQC.qc_status_string[idx] == "PASS") {
+        String subset = RecalcQual.genotyped_segments_vcf[idx]
+        String subset_indexes = RecalcQual.genotyped_segments_vcf_index[idx]
+      }
+    }
+    Array[String] subset_arr = select_all(subset)
+    Array[String] subset_index_arr = select_all(subset_indexes)
 
     call FastCombine {
       input:
-        input_vcfs = RecalcQual.genotyped_segments_vcf,
-        input_vcf_indexes = RecalcQual.genotyped_segments_vcf_index,
+        input_vcfs = subset_arr,
+        input_vcf_indexes = subset_index_arr,
         sv_pipeline_docker = sv_pipeline_docker
     }
 

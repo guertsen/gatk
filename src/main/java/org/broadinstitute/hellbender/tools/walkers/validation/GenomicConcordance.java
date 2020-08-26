@@ -1,5 +1,6 @@
 package org.broadinstitute.hellbender.tools.walkers.validation;
 
+import com.google.common.annotations.VisibleForTesting;
 import htsjdk.variant.variantcontext.VariantContext;
 import org.apache.commons.collections4.Predicate;
 import org.apache.commons.lang.mutable.MutableLong;
@@ -46,8 +47,10 @@ public class GenomicConcordance extends Concordance {
             shortName = BLOCK_LENGTH_HISTOGRAM_SHORT_NAME)
     protected File blockLengthHistogramFile;
 
-    private final SortedMap<Long, GenomicConcordanceHistogramEntry> blockLengthHistogram = new TreeMap<>();
-    private final SortedMap<Long, GenomicConcordanceHistogramEntry> confidenceHistogram = new TreeMap<>();
+    @VisibleForTesting
+    final SortedMap<Long, GenomicConcordanceHistogramEntry> blockLengthHistogram = new TreeMap<>();
+    @VisibleForTesting
+    final SortedMap<Long, GenomicConcordanceHistogramEntry> confidenceHistogram = new TreeMap<>();
 
     @Override
     protected Predicate<VariantContext> makeTruthVariantFilter() {

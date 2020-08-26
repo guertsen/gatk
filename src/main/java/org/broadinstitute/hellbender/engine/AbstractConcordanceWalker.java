@@ -1,5 +1,6 @@
 package org.broadinstitute.hellbender.engine;
 
+import com.google.common.annotations.VisibleForTesting;
 import htsjdk.samtools.SAMSequenceDictionary;
 import htsjdk.samtools.util.Locatable;
 import htsjdk.samtools.util.PeekableIterator;
@@ -225,7 +226,7 @@ public abstract class AbstractConcordanceWalker extends WalkerBase {
      * store a truth vc in case of a false negative, an eval vc in case of a false positive, or a concordance pair of
      * truth and eval in case of a true positive.
      */
-    protected static class TruthVersusEval implements Locatable {
+    public static class TruthVersusEval implements Locatable {
         private final Optional<VariantContext> truth;
         private final Optional<VariantContext> eval;
         private final ConcordanceState concordanceState;

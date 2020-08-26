@@ -1,5 +1,6 @@
 package org.broadinstitute.hellbender.tools.walkers.validation;
 
+import com.google.common.annotations.VisibleForTesting;
 import htsjdk.variant.variantcontext.VariantContext;
 import htsjdk.variant.variantcontext.VariantContextBuilder;
 import htsjdk.variant.variantcontext.writer.VariantContextWriter;
@@ -124,13 +125,18 @@ public class Concordance extends AbstractConcordanceWalker {
 
     private final Map<String, FilterAnalysisRecord> filterAnalysisRecords = new HashMap<>();
 
-    @Override
-    public void onTraversalStart() {
-        Set<VCFHeaderLine> defaultToolHeaderLines = getDefaultToolVCFHeaderLines();
+    @VisibleForTesting
+    void initializeConcordanceStateCounts() {
         for (final ConcordanceState state : ConcordanceState.values()) {
             snpCounts.put(state, new MutableLong(0));
             indelCounts.put(state, new MutableLong(0));
         }
+    }
+
+    @Override
+    public void onTraversalStart() {
+        Set<VCFHeaderLine> defaultToolHeaderLines = getDefaultToolVCFHeaderLines();
+        initializeConcordanceStateCounts();
 
         final VCFHeader evalHeader = getEvalHeader();
 

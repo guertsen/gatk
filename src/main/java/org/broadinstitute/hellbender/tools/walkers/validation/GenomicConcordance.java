@@ -32,32 +32,24 @@ public class GenomicConcordance extends Concordance {
     static final String USAGE_ONE_LINE_SUMMARY = "???TODO";
     static final String USAGE_SUMMARY = "???TODO";
 
-    public static final String CONFIDENCE_HISTOGRAM_LONG_NAME = "confidence-histogram";
-    public static final String CONFIDENCE_HISTOGRAM_SHORT_NAME = "ch";
+    public static final String TRUTH_BLOCK_HISTOGRAM_LONG_NAME = "truth-block-histogram";
+    public static final String TRUTH_BLOCK_HISTOGRAM_SHORT_NAME = "tbh";
 
-    public static final String BLOCK_LENGTH_HISTOGRAM_LONG_NAME = "block-length-histogram";
-    public static final String BLOCK_LENGTH_HISTOGRAM_SHORT_NAME = "blh";
-
-    public static final String BLOCK_LENGTH_AND_CONFIDENCE_HISTOGRAM_LONG_NAME = "block-length-and-confidence-histogram";
-    public static final String BLOCK_LENGTH_AND_CONFIDENCE_HISTOGRAM_SHORT_NAME = "blch";
+    public static final String EVAL_BLOCK_HISTOGRAM_LONG_NAME = "eval-block-histogram";
+    public static final String EVAL_BLOCK_HISTOGRAM_SHORT_NAME = "ebh";
 
     public static final String CONFIDENCE_CONCORDANCE_HISTOGRAM_LONG_NAME = "confidence-concordance-histogram";
     public static final String CONFIDENCE_CONCORDANCE_HISTOGRAM_SHORT_NAME = "cch";
 
-    @Argument(doc = "A table of reference confidence ???TODO",
-            fullName = CONFIDENCE_HISTOGRAM_LONG_NAME,
-            shortName = CONFIDENCE_HISTOGRAM_SHORT_NAME)
-    protected File confidenceHistogramFile;
+    @Argument(doc = "A histogram of block lengths and their associated confidence scores for the truth sample",
+            fullName = TRUTH_BLOCK_HISTOGRAM_LONG_NAME,
+            shortName = TRUTH_BLOCK_HISTOGRAM_SHORT_NAME)
+    protected File truthBlockHistogramFile;
 
-    @Argument(doc = "A table of reference block lengths ???TODO",
-            fullName = BLOCK_LENGTH_HISTOGRAM_LONG_NAME,
-            shortName = BLOCK_LENGTH_HISTOGRAM_SHORT_NAME)
-    protected File blockLengthHistogramFile;
-
-    @Argument(doc = "A table of combined reference block lengths and confidence ???TODO",
-            fullName = BLOCK_LENGTH_AND_CONFIDENCE_HISTOGRAM_LONG_NAME,
-            shortName = BLOCK_LENGTH_AND_CONFIDENCE_HISTOGRAM_SHORT_NAME)
-    protected File blockLengthAndConfidenceHistogramFile;
+    @Argument(doc = "A histogram of block lengths and their associated confidence scores for the eval sample",
+            fullName = EVAL_BLOCK_HISTOGRAM_LONG_NAME,
+            shortName = EVAL_BLOCK_HISTOGRAM_SHORT_NAME)
+    protected File evalBlockHistogramFile;
 
     @Argument(doc = "A table of combined reference block lengths and confidence ???TODO",
             fullName = CONFIDENCE_CONCORDANCE_HISTOGRAM_LONG_NAME,
@@ -65,11 +57,9 @@ public class GenomicConcordance extends Concordance {
     protected File confidenceConcordanceHistogramFile;
 
     @VisibleForTesting
-    final SortedMap<String, GenomicConcordanceHistogramEntry> blockLengthHistogram = new TreeMap<>();
+    final Histogram<Pair<Integer, Integer>> truthBlockHistogram = new Histogram<>();
     @VisibleForTesting
-    final SortedMap<String, GenomicConcordanceHistogramEntry> confidenceHistogram = new TreeMap<>();
-    @VisibleForTesting
-    final SortedMap<String, GenomicConcordanceHistogramEntry> blockLengthAndConfidenceHistogram = new TreeMap<>();
+    final Histogram<Pair<Integer, Integer>> evalBlockHistogram = new Histogram<>();
     @VisibleForTesting
     final Histogram<Pair<Integer, Integer>> confidenceConcordanceHistogram = new Histogram<>();
 
@@ -156,21 +146,15 @@ public class GenomicConcordance extends Concordance {
 
             // TODO get length on reference or just end-start? Shouldn't matter for NON_REF?
             // The end is inclusive, thus the plus one when calculating the length
-            String blockLength = String.valueOf(truthVersusEval.getTruth().getEnd() - truthVersusEval.getTruth().getStart() + 1);
-            blockLengthHistogram.putIfAbsent(blockLength, new GenomicConcordanceHistogramEntry(blockLength));
-            blockLengthHistogram.get(blockLength).incrementTruthValue();
+            int blockLength = truthVersusEval.getTruth().getEnd() - truthVersusEval.getTruth().getStart() + 1;
 
             // TODO can a non_ref block ever have a number of genotypes != 1?
             if(truthVersusEval.getTruth().getGenotypes().size() != 1) {
                 throw new IllegalStateException();//"The NON_REF block at ".append(truthVersusEval.getTruth().toStringDecodeGenotypes()) + " has more than one genotype, which is not supported.");
             }
             Genotype genotype = truthVersusEval.getTruth().getGenotype(0);
-            String gq = String.valueOf(genotype.getGQ());
-            confidenceHistogram.putIfAbsent(gq, new GenomicConcordanceHistogramEntry(gq));
-            confidenceHistogram.get(gq).incrementTruthValue();
-
-            blockLengthAndConfidenceHistogram.putIfAbsent(blockLength + "," + gq, new GenomicConcordanceHistogramEntry(blockLength + "," + gq));
-            blockLengthAndConfidenceHistogram.get(blockLength + "," + gq).incrementTruthValue();
+            int gq = genotype.getGQ();
+            truthBlockHistogram.increment(new Pair<>(blockLength, gq));
         }
 
         // Eval
@@ -178,21 +162,15 @@ public class GenomicConcordance extends Concordance {
             currentEvalVariantContext = truthVersusEval.getEval();
 
             // The end is inclusive, thus the plus one when calculating the length
-            String blockLength = String.valueOf(truthVersusEval.getEval().getEnd() - truthVersusEval.getEval().getStart() + 1);
-            blockLengthHistogram.putIfAbsent(blockLength, new GenomicConcordanceHistogramEntry(blockLength));
-            blockLengthHistogram.get(blockLength).incrementEvalValue();
+            int blockLength = truthVersusEval.getEval().getEnd() - truthVersusEval.getEval().getStart() + 1;
 
             // TODO can a non_ref block ever have a number of genotypes != 1?
             if(truthVersusEval.getEval().getGenotypes().size() != 1) {
                 throw new IllegalStateException();//"The NON_REF block at ".append(truthVersusEval.getEval().toStringDecodeGenotypes()) + " has more than one genotype, which is not supported.");
             }
             Genotype genotype = truthVersusEval.getEval().getGenotype(0);
-            String gq = String.valueOf(genotype.getGQ());
-            confidenceHistogram.putIfAbsent(gq, new GenomicConcordanceHistogramEntry(gq));
-            confidenceHistogram.get(gq).incrementEvalValue();
-
-            blockLengthAndConfidenceHistogram.putIfAbsent(blockLength + "," + gq, new GenomicConcordanceHistogramEntry(blockLength + "," + gq));
-            blockLengthAndConfidenceHistogram.get(blockLength + "," + gq).incrementEvalValue();
+            int gq = genotype.getGQ();
+            evalBlockHistogram.increment(new Pair<>(blockLength, gq));
         }
     }
 
@@ -202,25 +180,18 @@ public class GenomicConcordance extends Concordance {
 
         evaluateEndOfContig();
 
-        try(GenomicConcordanceHistogramEntry.Writer blockLengthHistogramWriter = GenomicConcordanceHistogramEntry.getWriter(blockLengthHistogramFile)) {
-            blockLengthHistogramWriter.writeAllRecords(blockLengthHistogram.values());
-        } catch (IOException e) {
-            throw new UserException("Encountered an IO exception writing the block length histogram table", e);
-        }
-
-        try(GenomicConcordanceHistogramEntry.Writer confidenceHistogramWriter = GenomicConcordanceHistogramEntry.getWriter(confidenceHistogramFile)) {
-            confidenceHistogramWriter.writeAllRecords(confidenceHistogram.values());
-        } catch (IOException e) {
-            throw new UserException("Encountered an IO exception writing the confidence histogram table", e);
-        }
-
-        try(GenomicConcordanceHistogramEntry.Writer confidenceHistogramWriter = GenomicConcordanceHistogramEntry.getWriter(blockLengthAndConfidenceHistogramFile)) {
-            confidenceHistogramWriter.writeAllRecords(blockLengthAndConfidenceHistogram.values());
-        } catch (IOException e) {
-            throw new UserException("Encountered an IO exception writing the combined block length and confidence histogram table", e);
-        }
-
+        // Truth histogram
         MetricsFile<?, Pair<Integer, Integer>> metricsFile = getMetricsFile();
+        metricsFile.addHistogram(truthBlockHistogram);
+        metricsFile.write(truthBlockHistogramFile);
+
+        // Eval histogram
+        metricsFile = getMetricsFile();
+        metricsFile.addHistogram(evalBlockHistogram);
+        metricsFile.write(evalBlockHistogramFile);
+
+        // Confidence concordance
+        metricsFile = getMetricsFile();
         metricsFile.addHistogram(confidenceConcordanceHistogram);
         metricsFile.write(confidenceConcordanceHistogramFile);
 

@@ -99,7 +99,7 @@ public class GenomicConcordance extends Concordance {
 
         // Both VCFs must have a (at least symolic) variant here
         if (!(truthVersusEval.hasTruth() && truthVersusEval.hasEval())) {
-            throw new IllegalStateException(String.format("Beginning of new contig (%s) and %s VCF has no variant.", truthVersusEval.getTruthIfPresentElseEval().getContig(), truthVersusEval.hasTruth() ? "eval" : "truth"));
+            logger.warn(String.format("Beginning of new contig (%s) and %s VCF has no variant.", truthVersusEval.getTruthIfPresentElseEval().getContig(), truthVersusEval.hasTruth() ? "eval" : "truth"));
         }
         currentContig = truthVersusEval.getTruth().getContig();
     }

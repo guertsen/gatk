@@ -21,23 +21,23 @@ public class GenomicConcordanceHistogramEntry {
     private static final String[] HISTOGRAM_COLUMN_HEADER =
             {BIN_COLUMN_NAME, TRUTH_COLUMN_NAME, EVAL_COLUMN_NAME};
 
-    final long bin;
+    final String bin;
     MutableLong truthValue;
     MutableLong evalValue;
 
-    public GenomicConcordanceHistogramEntry(final long bin) {
+    public GenomicConcordanceHistogramEntry(final String bin) {
         this.bin = bin;
         this.truthValue = new MutableLong(0);
         this.evalValue = new MutableLong(0);
     }
 
-    public GenomicConcordanceHistogramEntry(final long bin, final long truthValue, final long evalValue) {
+    public GenomicConcordanceHistogramEntry(final String bin, final long truthValue, final long evalValue) {
         this.bin = bin;
         this.truthValue = new MutableLong(truthValue);
         this.evalValue = new MutableLong(evalValue);
     }
 
-    public long getBin() {return bin; }
+    public String getBin() {return bin; }
     public long getTruthValue() { return truthValue.longValue(); }
     public long getEvalValue() { return evalValue.longValue(); }
 
@@ -72,7 +72,7 @@ public class GenomicConcordanceHistogramEntry {
 
         @Override
         protected GenomicConcordanceHistogramEntry createRecord(final DataLine dataLine) {
-            final long bin = Long.parseLong(dataLine.get(BIN_COLUMN_NAME));
+            final String bin = dataLine.get(BIN_COLUMN_NAME);
             final long truthValue = Long.parseLong(dataLine.get(TRUTH_COLUMN_NAME));
             final long evalValue = Long.parseLong(dataLine.get(EVAL_COLUMN_NAME));
 

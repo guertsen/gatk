@@ -47,6 +47,7 @@ public class GenomicConcordanceUnitTest {
     @DataProvider
     public Object[][] provideEvaluations() {
         return new Object[][] {
+                // No non_ref blocks
                 {
                         // Truth variants
                         Arrays.asList(
@@ -61,6 +62,7 @@ public class GenomicConcordanceUnitTest {
                         // Expected confidence score histogram
                         new ArrayList<GenomicConcordanceHistogramEntry>(),
                 },
+                // Non_ref vs. variant
                 {
                         // Truth variants
                         Arrays.asList(
@@ -72,13 +74,14 @@ public class GenomicConcordanceUnitTest {
                         ),
                         // Expected block length histogram
                         Arrays.asList(
-                                new GenomicConcordanceHistogramEntry(1, 1, 0)
+                                new GenomicConcordanceHistogramEntry("1", 1, 0)
                         ),
                         // Expected confidence score histogram
                         Arrays.asList(
-                                new GenomicConcordanceHistogramEntry(99, 1, 0)
+                                new GenomicConcordanceHistogramEntry("99", 1, 0)
                         ),
                 },
+                // One vs. two blocks
                 {
                         // Truth variants
                         Arrays.asList(
@@ -92,13 +95,13 @@ public class GenomicConcordanceUnitTest {
                         ),
                         // Expected block length histogram
                         Arrays.asList(
-                                new GenomicConcordanceHistogramEntry(10, 1, 0),
-                                new GenomicConcordanceHistogramEntry(5, 0, 2)
+                                new GenomicConcordanceHistogramEntry("10", 1, 0),
+                                new GenomicConcordanceHistogramEntry("5", 0, 2)
                         ),
                         // Expected confidence score histogram
                         Arrays.asList(
-                                new GenomicConcordanceHistogramEntry(99, 1, 1),
-                                new GenomicConcordanceHistogramEntry(98, 0, 1)
+                                new GenomicConcordanceHistogramEntry("99", 1, 1),
+                                new GenomicConcordanceHistogramEntry("98", 0, 1)
                         ),
                 },
         };

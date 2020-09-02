@@ -215,7 +215,7 @@ public final class GermlineCNVSegmentVariantComposer extends GermlineCNVVariantC
         genotypeBuilder.attribute(QA, FastMath.round(segment.getQualityAllCalled()));
         genotypeBuilder.attribute(QSS, FastMath.round(segment.getQualityStart()));
         genotypeBuilder.attribute(QSE, FastMath.round(segment.getQualityEnd()));
-        final Genotype genotype = genotypeBuilder.make();
+        //don't build yet because genotype might get updated from input cohort VCF
 
         final Set<Allele> uniquifiedAlleles = new HashSet<>();
         uniquifiedAlleles.add(refAllele);
@@ -253,6 +253,7 @@ public final class GermlineCNVSegmentVariantComposer extends GermlineCNVVariantC
                         new SimpleInterval(segment.getContig(), segment.getStart(), segment.getEnd()), e);
             }
         }
+        final Genotype genotype = genotypeBuilder.make();
         variantContextBuilder.genotypes(genotype);
         variantContextBuilder.log10PError(segment.getQualitySomeCalled()/-10.0);
         //apply filters if we're running against the cohort VCF

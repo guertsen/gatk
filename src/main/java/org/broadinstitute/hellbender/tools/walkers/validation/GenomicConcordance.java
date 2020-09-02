@@ -97,11 +97,7 @@ public class GenomicConcordance extends Concordance {
             evaluateEndOfContig();
         }
 
-        // Both VCFs must have a (at least symolic) variant here
-        if (!(truthVersusEval.hasTruth() && truthVersusEval.hasEval())) {
-            logger.warn(String.format("Beginning of new contig (%s) and %s VCF has no variant.", truthVersusEval.getTruthIfPresentElseEval().getContig(), truthVersusEval.hasTruth() ? "eval" : "truth"));
-        }
-        currentContig = truthVersusEval.getTruth().getContig();
+        currentContig = truthVersusEval.getTruthIfPresentElseEval().getContig();
     }
 
     @Override
@@ -150,7 +146,7 @@ public class GenomicConcordance extends Concordance {
 
             // TODO can a non_ref block ever have a number of genotypes != 1?
             if(truthVersusEval.getTruth().getGenotypes().size() != 1) {
-                throw new IllegalStateException();//"The NON_REF block at ".append(truthVersusEval.getTruth().toStringDecodeGenotypes()) + " has more than one genotype, which is not supported.");
+                throw new IllegalStateException(String.format("The NON_REF block at %s has more than one genotype, which is not supported.", truthVersusEval.getTruth().toStringDecodeGenotypes()));
             }
             Genotype genotype = truthVersusEval.getTruth().getGenotype(0);
             int gq = genotype.getGQ();

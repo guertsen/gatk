@@ -241,6 +241,10 @@ public final class GermlineCNVSegmentVariantComposer extends GermlineCNVVariantC
                     copyAnnotationIfPresent(cohortVC, variantContextBuilder, VCFConstants.ALLELE_NUMBER_KEY, GATKVCFConstants.ORIGINAL_AN_KEY);
                     copyAnnotationIfPresent(cohortVC, variantContextBuilder, GATKSVVCFConstants.SVTYPE, GATKSVVCFConstants.SVTYPE);
                     copyAnnotationIfPresent(cohortVC, variantContextBuilder, GATKSVVCFConstants.SVLEN, GATKSVVCFConstants.SVLEN);
+                    //the joint segmentation goes through a lot of trouble to correct genotypes for overlapping events
+                    if (cohortVC.hasGenotype(sampleName)) {
+                        genotypeBuilder.alleles(cohortVC.getGenotype(sampleName).getAlleles());
+                    }
                 } else {
                     logger.warn("No matching cohort VC at " + segment.getContig() + ":" + segment.getStart());
                 }

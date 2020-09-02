@@ -448,7 +448,7 @@ public final class PostprocessGermlineCNVCalls extends GATKTool {
     }
 
     private void generateSegmentsVCFFileFromAllShards() {
-        logger.info("Generating segments VCF file...");
+        logger.info("Generating segments...");
 
         /* perform segmentation */
         final File pythonScriptOutputPath = IOUtils.createTempDir("gcnv-segmented-calls");
@@ -460,6 +460,7 @@ public final class PostprocessGermlineCNVCalls extends GATKTool {
         }
 
         /* parse segments */
+        logger.info("Parsing Python output...");
         final File copyNumberSegmentsFile = getCopyNumberSegmentsFile(pythonScriptOutputPath, sampleIndex);
         //if we supply a breakpoints file, then allow overlapping segments
         final IntegerCopyNumberSegmentCollection integerCopyNumberSegmentCollection = clusteredBreakpointsVCFFile == null ?

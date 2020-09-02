@@ -2,6 +2,7 @@ package org.broadinstitute.hellbender.tools.walkers.validation;
 
 import com.google.common.annotations.VisibleForTesting;
 import htsjdk.samtools.metrics.MetricsFile;
+import htsjdk.samtools.util.Histogram;
 import htsjdk.variant.variantcontext.Genotype;
 import htsjdk.variant.variantcontext.VariantContext;
 import org.apache.commons.collections4.Predicate;
@@ -9,15 +10,10 @@ import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.hellbender.engine.ReadsContext;
 import org.broadinstitute.hellbender.engine.ReferenceContext;
-import org.broadinstitute.hellbender.exceptions.UserException;
 import picard.cmdline.programgroups.VariantEvaluationProgramGroup;
-import htsjdk.samtools.util.Histogram;
 import picard.sam.util.Pair;
 
 import java.io.File;
-import java.io.IOException;
-import java.util.SortedMap;
-import java.util.TreeMap;
 
 /**
  * ??? TODO
@@ -78,13 +74,14 @@ public class GenomicConcordance extends Concordance {
     }
 
     private void evaluateEndOfContig() {
-        if (currentTruthVariantContext.getEnd() != currentEvalVariantContext.getEnd()) {
-            logger.warn(String.format("For the contig '%s', the end of the last truth variant (%d) does not equal the end of the last eval variant (%d).", currentContig, currentTruthVariantContext.getEnd(), currentEvalVariantContext.getEnd()));
+        if (currentTruthVariantContext != null && currentEvalVariantContext != null) {
+            int blockStart = Math.max(currentTruthVariantContext.getStart(), currentEvalVariantContext.getStart());
+            int blockEnd = Math.min(currentTruthVariantContext.getEnd(), currentEvalVariantContext.getEnd());
+            int jointBlockLength = blockEnd - blockStart + 1;
+            if (jointBlockLength > 0) {
+                confidenceConcordanceHistogram.increment(new Pair<>(currentTruthVariantContext.getGenotype(0).getGQ(), currentEvalVariantContext.getGenotype(0).getGQ()), jointBlockLength);
+            }
         }
-        int blockStart = Math.max(currentTruthVariantContext.getStart(), currentEvalVariantContext.getStart());
-        int blockEnd = Math.min(currentTruthVariantContext.getEnd(), currentEvalVariantContext.getEnd());
-        int jointBlockLength = blockEnd - blockStart + 1;
-        confidenceConcordanceHistogram.increment(new Pair<>(currentTruthVariantContext.getGenotype(0).getGQ(), currentEvalVariantContext.getGenotype(0).getGQ()), jointBlockLength);
 
         currentTruthVariantContext = null;
         currentEvalVariantContext = null;
@@ -123,9 +120,6 @@ public class GenomicConcordance extends Concordance {
             if (jointBlockLength > 0) {
                 confidenceConcordanceHistogram.increment(new Pair<>(currentTruthVariantContext.getGenotype(0).getGQ(), currentEvalVariantContext.getGenotype(0).getGQ()), blockEnd - blockStart + 1);
             }
-//            if (currentPosition - 1 != Math.min(currentTruthVariantContext.getEnd(), currentEvalVariantContext.getEnd())) {
-//                //logger.warn(String.format("The current position (%s:%s) does not coincide with the end of a previous NON_REF block.", currentContig, currentPosition));
-//            }
 
             int currentPosition = truthVersusEval.getTruthIfPresentElseEval().getStart();
             if (truthVersusEval.hasTruth() || currentPosition >= currentTruthVariantContext.getEnd()) {
@@ -162,7 +156,7 @@ public class GenomicConcordance extends Concordance {
 
             // TODO can a non_ref block ever have a number of genotypes != 1?
             if(truthVersusEval.getEval().getGenotypes().size() != 1) {
-                throw new IllegalStateException();//"The NON_REF block at ".append(truthVersusEval.getEval().toStringDecodeGenotypes()) + " has more than one genotype, which is not supported.");
+                throw new IllegalStateException(String.format("The NON_REF block at %s has more than one genotype, which is not supported.", truthVersusEval.getEval().toStringDecodeGenotypes()));
             }
             Genotype genotype = truthVersusEval.getEval().getGenotype(0);
             int gq = genotype.getGQ();

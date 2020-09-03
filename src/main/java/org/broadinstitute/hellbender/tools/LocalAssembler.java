@@ -90,10 +90,11 @@ public class LocalAssembler extends PairWalker {
                 collectTransitPairCounts(contigs, readPaths);
         final String traversalsFilename = outputFilePrefix + ".traversals.fa.gz";
         try {
-            final Collection<Traversal> allTraversals =
-                    traverseAllPaths(contigs, readPaths, contigTransitsMap);
-            removeTriviallyDifferentTraversals(allTraversals);
+            final List<Traversal> allTraversals =
+                    new ArrayList<>(traverseAllPaths(contigs, readPaths, contigTransitsMap));
             writeTraversals(allTraversals, traversalsFilename);
+            final String scaffoldsFileName = outputFilePrefix + ".scaffolds.fa.gz";
+            writeTraversals(createScaffolds(allTraversals), scaffoldsFileName);
         } catch ( final AssemblyTooComplexException x ) {
             logger.warn("Assembly too complex.  Writing contigs as traversals in " +
                     traversalsFilename + ".");
@@ -536,7 +537,6 @@ public class LocalAssembler extends PairWalker {
 
     private boolean fillGaps( final KmerSet<KmerAdjacency> kmerAdjacencySet ) {
         final Map<String, Integer> gapFillCounts = new HashMap<>();
-
         for ( final GATKRead read : reads ) {
             final Path path = new Path(read.getBasesNoCopy(), kmerAdjacencySet);
             final List<PathPart> parts = path.getParts();
@@ -588,8 +588,8 @@ public class LocalAssembler extends PairWalker {
                 new HashMap<>(3 * contigs.size());
         for ( final Path path : readPaths ) {
             final List<PathPart> parts = path.getParts();
-            final int nParts = parts.size();
-            for ( int partIdx = 1; partIdx < nParts - 1; ++partIdx ) {
+            final int lastPart = parts.size() - 1;
+            for ( int partIdx = 1; partIdx < lastPart; ++partIdx ) {
                 final Contig prevContig = parts.get(partIdx - 1).getContig();
                 if ( prevContig == null ) continue;
                 final Contig curContig = parts.get(partIdx).getContig();
@@ -602,27 +602,20 @@ public class LocalAssembler extends PairWalker {
                     partIdx += 2;
                     continue;
                 }
-                addTransitPair(contigTransitsMap.computeIfAbsent(curContig, tig -> new ArrayList<>(4)),
-                        prevContig,
-                        nextContig);
-                addTransitPair(contigTransitsMap.computeIfAbsent(curContig.rc(), tig -> new ArrayList<>(4)),
-                        nextContig.rc(),
-                        prevContig.rc());
+                final TransitPairCount tpc = new TransitPairCount(prevContig, nextContig);
+                final List<TransitPairCount> tpcList =
+                        contigTransitsMap.computeIfAbsent(curContig, tig -> new ArrayList<>(4));
+                final int idx = tpcList.indexOf(tpc);
+                if ( idx != -1 ) {
+                    tpcList.get(idx).observe();
+                } else {
+                    tpcList.add(tpc);
+                    contigTransitsMap.computeIfAbsent(curContig.rc(), tig -> new ArrayList<>(4))
+                            .add(tpc.getRC());
+                }
             }
         }
         return contigTransitsMap;
-    }
-
-    private static void addTransitPair( final List<TransitPairCount> transitPairList,
-                                        final Contig prevContig,
-                                        final Contig nextContig ) {
-        final TransitPairCount transitPair = new TransitPairCount(prevContig, nextContig);
-        int idx = transitPairList.indexOf(transitPair);
-        if ( idx == -1 ) {
-            idx = transitPairList.size();
-            transitPairList.add(transitPair);
-        }
-        transitPairList.get(idx).observe();
     }
 
     private static Set<Traversal> traverseAllPaths(
@@ -630,8 +623,10 @@ public class LocalAssembler extends PairWalker {
             final List<Path> readPaths,
             final Map<Contig, List<TransitPairCount>> contigTransitsMap ) {
         final Set<Traversal> traversalSet = new HashSet<>();
-        final Deque<Contig> contigsList = new ArrayDeque<>();
+        final List<Contig> contigsList = new ArrayList<>();
         for ( final Contig contig : contigs ) {
+            // untransited contigs are sources, sinks, or large contigs that can't be crossed by a read
+            // build traversals from these
             if ( !contigTransitsMap.containsKey(contig) ) {
                 boolean done = false;
                 for ( final Contig successor : contig.getSuccessors() ) {
@@ -655,12 +650,13 @@ public class LocalAssembler extends PairWalker {
                 contigTransitsMap.entrySet() ) {
             for ( final TransitPairCount tpc : entry.getValue() ) {
                 if ( tpc.getCount() > 0 ) {
+                    tpc.resetCount();
                     final Contig contig = entry.getKey();
                     final Set<Traversal> fwdTraversalSet = new HashSet<>();
-                    traverse(tpc.getContig2(), contig,
+                    traverse(tpc.getNextContig(), contig,
                             contigsList, readPaths, contigTransitsMap, fwdTraversalSet);
                     final Set<Traversal> revTraversalSet = new HashSet<>();
-                    traverse(tpc.getContig1().rc(), contig.rc(),
+                    traverse(tpc.getPrevContig().rc(), contig.rc(),
                             contigsList, readPaths, contigTransitsMap, revTraversalSet);
                     for ( final Traversal revTraversal : revTraversalSet ) {
                         final Traversal revTraversalRC = revTraversal.rc();
@@ -678,58 +674,92 @@ public class LocalAssembler extends PairWalker {
 
     private static void traverse( final Contig contig,
                                   final Contig predecessor,
-                                  final Deque<Contig> contigsList,
+                                  final List<Contig> contigsList,
                                   final List<Path> readPaths,
                                   final Map<Contig, List<TransitPairCount>> contigTransitsMap,
                                   final Set<Traversal> traversalSet ) {
-        contigsList.addLast(predecessor);
-        final List<TransitPairCount> transits =
-                contigsList.contains(contig) ? null : contigTransitsMap.get(contig);
-        boolean done = false;
-        if ( transits != null ) {
-            for ( final TransitPairCount tpc : transits ) {
-                if ( tpc.getContig1() == predecessor ) {
-                    final Contig successor = tpc.getContig2();
-                    clearTransitPairCount(contigTransitsMap, predecessor, contig, successor);
-                    if ( successor.rc() != contig ) {
-                        traverse(tpc.getContig2(), contig,
-                                contigsList, readPaths, contigTransitsMap, traversalSet);
-                    } else { // we're going palindromic
-                        final List<Contig> toMatch = new ArrayList<>(3);
-                        toMatch.add(predecessor);
-                        toMatch.add(contig);
-                        toMatch.add(successor);
-                        final List<List<Contig>> longestPaths =
-                                findLongestPaths(toMatch, readPaths);
-                        contigsList.addLast(contig);
-                        contigsList.addLast(successor);
-                        if ( longestPaths.isEmpty() ) {
-                            addTraversal(new Traversal(contigsList), traversalSet);
+        contigsList.add(predecessor);
+        if ( contig.isCyclic() ) {
+            final int cycleIdx = contigsList.indexOf(contig);
+            if ( cycleIdx != -1 ) {
+                contigsList.add(contig);
+                final List<List<Contig>> longestPaths =
+                        findLongestPaths(contigsList.subList(cycleIdx, contigsList.size()), readPaths);
+                if ( longestPaths.isEmpty() ) {
+                    addTraversal(new Traversal(contigsList, true), traversalSet);
+                } else {
+                    for ( final List<Contig> path : longestPaths ) {
+                        final List<Contig> extendedContigsList =
+                                new ArrayList<>(contigsList.size() + path.size());
+                        extendedContigsList.addAll(contigsList);
+                        if ( path.get(path.size() - 1).isCyclic() ) {
+                            extendedContigsList.addAll(path);
+                            addTraversal(new Traversal(extendedContigsList, true), traversalSet);
                         } else {
-                            for ( final List<Contig> suffix : longestPaths ) {
-                                contigsList.addAll(suffix);
-                                addTraversal(new Traversal(contigsList), traversalSet);
-                                Contig prev = contig;
-                                Contig cur = successor;
-                                for ( final Contig next : suffix ) {
-                                    contigsList.removeLast();
-                                    clearTransitPairCount(contigTransitsMap, prev, cur, next);
+                            for ( final Contig curContig : path ) {
+                                if ( curContig.isCyclic() ) {
+                                    extendedContigsList.add(curContig);
+                                } else {
+                                    final Contig prevContig =
+                                            extendedContigsList.get(extendedContigsList.size() - 1);
+                                    traverse(curContig, prevContig, extendedContigsList, readPaths,
+                                                contigTransitsMap, traversalSet);
                                 }
                             }
                         }
-                        contigsList.removeLast();
-                        contigsList.removeLast();
+                        clearTransitPairs(contigTransitsMap, extendedContigsList);
                     }
+                }
+                contigsList.remove(contigsList.size() - 1);
+                contigsList.remove(contigsList.size() - 1);
+                return;
+            }
+        }
+        final List<TransitPairCount> transits = contigTransitsMap.get(contig);
+        boolean done = false;
+        if ( transits != null ) {
+            for ( final TransitPairCount tpc : transits ) {
+                if ( tpc.getPrevContig() == predecessor ) {
+                    final Contig successor = tpc.getNextContig();
+                    if ( predecessor == contig.rc() ) {
+                        final int nContigs = contigsList.size();
+                        if ( nContigs > 1 ) {
+                            if ( successor.rc() == contigsList.get(nContigs - 2) ) {
+                                continue;
+                            }
+                        }
+                    }
+                    tpc.resetCount();
+                    traverse(successor, contig, contigsList, readPaths, contigTransitsMap, traversalSet);
                     done = true;
                 }
             }
         }
         if ( !done ) {
-            contigsList.addLast(contig);
+            contigsList.add(contig);
             addTraversal(new Traversal(contigsList), traversalSet);
-            contigsList.removeLast();
+            contigsList.remove(contigsList.size() - 1);
         }
-        contigsList.removeLast();
+        contigsList.remove(contigsList.size() - 1);
+    }
+
+    private static void clearTransitPairs(
+            final Map<Contig, List<TransitPairCount>> contigTransitsMap,
+            final List<Contig> contigsList ) {
+        final int lastIdx = contigsList.size() - 1;
+        for ( int idx = 1; idx < lastIdx; ++idx ) {
+            final List<TransitPairCount> pairCounts = contigTransitsMap.get(contigsList.get(idx));
+            if ( pairCounts != null ) {
+                final Contig predecessor = contigsList.get(idx - 1);
+                final Contig successor = contigsList.get(idx + 1);
+                for ( final TransitPairCount tpc : pairCounts ) {
+                    if ( tpc.getPrevContig() == predecessor && tpc.getNextContig() == successor ) {
+                        tpc.resetCount();
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     private static void addTraversal( final Traversal traversal,
@@ -738,27 +768,6 @@ public class LocalAssembler extends PairWalker {
             traversalSet.add(traversal);
             if ( traversalSet.size() >= TOO_MANY_TRAVERSALS ) {
                 throw new AssemblyTooComplexException();
-            }
-        }
-    }
-
-    private static void clearTransitPairCount(
-            final Map<Contig, List<TransitPairCount>> contigTransitsMap,
-            final Contig predecessor,
-            final Contig contig,
-            final Contig successor ) {
-        final List<TransitPairCount> transits = contigTransitsMap.get(contig);
-        for ( final TransitPairCount tpc : transits ) {
-            if ( tpc.getContig1() == predecessor && tpc.getContig2() == successor ) {
-                tpc.resetCount();
-                break;
-            }
-        }
-        final List<TransitPairCount> revTransits = contigTransitsMap.get(contig.rc());
-        for ( final TransitPairCount tpc : revTransits ) {
-            if ( tpc.getContig1() == successor.rc() && tpc.getContig2() == predecessor.rc() ) {
-                tpc.resetCount();
-                break;
             }
         }
     }
@@ -826,7 +835,76 @@ public class LocalAssembler extends PairWalker {
         return true;
     }
 
-    private static void removeTriviallyDifferentTraversals( final Collection<Traversal> allTraversals ) {
+    private static Collection<Traversal> createScaffolds( final List<Traversal> allTraversals ) {
+        removeTriviallyDifferentTraversals(allTraversals);
+
+        final int nTraversals = allTraversals.size();
+        final Map<Contig, List<Integer>> traversalsByFirstContig = new HashMap<>(3 * nTraversals);
+        for ( int idx = 0; idx != nTraversals; ++idx ) {
+            final Traversal traversal = allTraversals.get(idx);
+            traversalsByFirstContig.compute(traversal.getFirstContig(),
+                    ( k, v ) -> v == null ? new ArrayList<>(3) : v).add(idx);
+            final Traversal rcTraversal = traversal.rc();
+            traversalsByFirstContig.compute(rcTraversal.getFirstContig(),
+                    ( k, v ) -> v == null ? new ArrayList<>(3) : v).add(~idx);
+        }
+
+        final List<Traversal> scaffolds = new ArrayList<>(nTraversals);
+        final boolean[] touched = new boolean[nTraversals];
+        for ( int idx = 0; idx != nTraversals; ++idx ) {
+            if ( !touched[idx] ) {
+                expandTraversal(idx, touched, traversalsByFirstContig, allTraversals, scaffolds);
+            }
+        }
+        return scaffolds;
+    }
+
+    private static void expandTraversal( final int traversalIdx,
+                                         final boolean[] touched,
+                                         final Map<Contig, List<Integer>> traversalsByFirstContig,
+                                         final List<Traversal> allTraversals,
+                                         final List<Traversal> scaffolds ) {
+        final Traversal traversal = allTraversals.get(traversalIdx);
+        touched[traversalIdx] = true;
+        final List<Traversal> downExtensions = new ArrayList<>();
+        walkTraversals(traversal, touched, traversalsByFirstContig, allTraversals, downExtensions);
+        final List<Traversal> upExtensions = new ArrayList<>();
+        walkTraversals(traversal.rc(), touched, traversalsByFirstContig, allTraversals, upExtensions);
+        for ( final Traversal down : downExtensions ) {
+            for ( final Traversal up : upExtensions ) {
+                scaffolds.add(Traversal.combineOverlappers(down, up, traversal.getContigs().size()));
+            }
+        }
+    }
+
+    private static void walkTraversals( final Traversal traversal,
+                                        final boolean[] touched,
+                                        final Map<Contig, List<Integer>> traversalsByFirstContig,
+                                        final List<Traversal> allTraversals,
+                                        final List<Traversal> extensions ) {
+        final List<Integer> indexList;
+        if ( traversal.isInextensible() ||
+                (indexList = traversalsByFirstContig.get(traversal.getLastContig())) == null ) {
+            extensions.add(traversal);
+            return;
+        }
+        for ( int idx : indexList ) {
+            final Traversal extension;
+            if ( idx >= 0 ) {
+                extension = allTraversals.get(idx);
+                touched[idx] = true;
+            } else {
+                final int rcIdx = ~idx;
+                extension = allTraversals.get(rcIdx).rc();
+                touched[rcIdx] = true;
+            }
+            walkTraversals(Traversal.combine(traversal, extension), touched, traversalsByFirstContig,
+                            allTraversals, extensions );
+        }
+    }
+
+    private static void removeTriviallyDifferentTraversals(
+                                            final Collection<Traversal> allTraversals ) {
         if ( allTraversals.isEmpty() ) {
             return;
         }
@@ -850,7 +928,8 @@ public class LocalAssembler extends PairWalker {
         allTraversals.addAll(sortedTraversals);
     }
 
-    private static boolean isTriviallyDifferent( final Traversal traversal1, final Traversal traversal2 ) {
+    private static boolean isTriviallyDifferent( final Traversal traversal1,
+                                                 final Traversal traversal2 ) {
         final Contig firstContig1 = traversal1.getFirstContig();
         final Contig lastContig1 = traversal1.getLastContig();
         final Contig firstContig2 = traversal2.getFirstContig();
@@ -893,7 +972,8 @@ public class LocalAssembler extends PairWalker {
                 final Contig tig1 = contigs1.get(idx1);
                 if ( tig1.getId() == id2 ) {
                     // if the previous cells also contain a match we've already removed the K-1 bases upstream
-                    final boolean extendMatch = contigs1.get(idx1 -1).getId() == contigs2.get(idx2 - 1).getId();
+                    final boolean extendMatch =
+                            contigs1.get(idx1 -1).getId() == contigs2.get(idx2 - 1).getId();
                     curRow[idx1] = prevRow[idx1 - 1] + (extendMatch ? tig1.getNKmers() : tig1.size());
                 } else {
                     curRow[idx1] = Math.max(curRow[idx1 - 1], prevRow[idx1]);
@@ -907,19 +987,22 @@ public class LocalAssembler extends PairWalker {
     private static class TraversalEndpointComparator implements Comparator<Traversal> {
         @Override
         public int compare( final Traversal traversal1, final Traversal traversal2 ) {
-            int cmp = Integer.compare(traversal1.contigs.get(0).getId(), traversal2.contigs.get(0).getId());
+            int cmp = Integer.compare(traversal1.contigs.get(0).getId(),
+                                      traversal2.contigs.get(0).getId());
             if ( cmp != 0 ) {
                 return cmp;
             }
             final int last1 = traversal1.contigs.size() - 1;
             final int last2 = traversal2.contigs.size() - 1;
-            cmp = Integer.compare(traversal1.contigs.get(last1).getId(), traversal2.contigs.get(last2).getId());
+            cmp = Integer.compare(traversal1.contigs.get(last1).getId(),
+                                  traversal2.contigs.get(last2).getId());
             if ( cmp != 0 ) {
                 return cmp;
             }
             final int stop = Math.min(last1, last2);
             for ( int idx = 1; idx < stop; ++idx ) {
-                cmp = Integer.compare(traversal1.contigs.get(idx).getId(), traversal2.contigs.get(idx).getId());
+                cmp = Integer.compare(traversal1.contigs.get(idx).getId(),
+                                      traversal2.contigs.get(idx).getId());
                 if ( cmp != 0 ) {
                     return cmp;
                 }
@@ -1917,8 +2000,8 @@ public class LocalAssembler extends PairWalker {
                     final int maxStop = contig.size() - Kmer.KSIZE + 1;
                     if ( (pp != firstPart && pp.getStart() != 0) ||
                          (pp != lastPart && pp.getStop() != maxStop) ) {
-                        sb.append('(').append(pp.getStart()).append('-').append(pp.getStop()).append('/');
-                        sb.append(maxStop).append(')');
+                        sb.append('(').append(pp.getStart()).append('-')
+                                .append(pp.getStop()).append('/').append(maxStop).append(')');
                     }
                 }
             }
@@ -1938,52 +2021,75 @@ public class LocalAssembler extends PairWalker {
     }
 
     public static final class TransitPairCount {
-        private final Contig contig1;
-        private final Contig contig2;
+        private final Contig prevContig;
+        private final Contig nextContig;
+        private final TransitPairCount rc;
         private int count;
 
-        public TransitPairCount( final Contig contig1, final Contig contig2 ) {
-            this.contig1 = contig1;
-            this.contig2 = contig2;
-            this.count = 0;
+        public TransitPairCount( final Contig prevContig, final Contig nextContig ) {
+            this.prevContig = prevContig;
+            this.nextContig = nextContig;
+            this.rc = new TransitPairCount(this);
+            this.count = 1;
         }
 
-        public Contig getContig1() { return contig1; }
-        public Contig getContig2() { return contig2; }
-        public void observe() { count += 1; }
-        public void resetCount() { count = 0; }
+        private TransitPairCount( final TransitPairCount rc ) {
+            this.prevContig = rc.nextContig.rc();
+            this.nextContig = rc.prevContig.rc();
+            this.rc = rc;
+            this.count = 1;
+        }
+
+        public Contig getPrevContig() { return prevContig; }
+        public Contig getNextContig() { return nextContig; }
+        public TransitPairCount getRC() { return rc; }
+        public void observe() { count += 1; rc.count += 1; }
+        public void resetCount() { count = 0; rc.count = 0; }
         public int getCount() { return count; }
 
         @Override public boolean equals( final Object obj ) {
             if ( !(obj instanceof TransitPairCount) ) return false;
             final TransitPairCount that = (TransitPairCount)obj;
-            return this.contig1 == that.contig1 && this.contig2 == that.contig2;
+            return this.prevContig == that.prevContig && this.nextContig == that.nextContig;
         }
 
         @Override public int hashCode() {
-            return 47 * (47 * contig1.hashCode() + contig2.hashCode());
+            return 47 * (47 * prevContig.hashCode() + nextContig.hashCode());
+        }
+
+        @Override public String toString() {
+            return prevContig + "<-->" + nextContig + " " + count + "x";
         }
     }
 
     public static final class Traversal {
         private final List<Contig> contigs;
+        private final boolean isInextensible;
 
         public Traversal( final Collection<Contig> contigs ) {
+            this(contigs, false);
+        }
+
+        public Traversal( final Collection<Contig> contigs, final boolean isInextensible ) {
             if ( contigs == null || contigs.isEmpty() ) {
                 throw new GATKException("null or empty list of contigs in traversal");
             }
             this.contigs = new ArrayList<>(contigs);
+            this.isInextensible = isInextensible;
         }
 
-        private Traversal( final List<Contig> contigs, final boolean isRC ) {
-            this.contigs = contigs;
+        // RC constructor
+        private Traversal( final Traversal traversal ) {
+            this.contigs = new ListRC(traversal.contigs);
+            this.isInextensible = false;
         }
 
-        public List<Contig> getContigs() { return contigs; }
+        public List<Contig> getContigs() { return Collections.unmodifiableList(contigs); }
         public Contig getFirstContig() { return contigs.get(0); }
         public Contig getLastContig() { return contigs.get(contigs.size() - 1); }
-        public Traversal rc() { return new Traversal(new ListRC(contigs), true); }
+        public Traversal rc() { return new Traversal(this); }
         public boolean isRC() { return contigs instanceof ListRC; }
+        public boolean isInextensible() { return isInextensible; }
 
         public String getName() {
             final StringBuilder sb = new StringBuilder();
@@ -2005,7 +2111,8 @@ public class LocalAssembler extends PairWalker {
 
         public String getSequence() {
             if ( contigs.size() == 0 ) return "";
-            final StringBuilder sb = new StringBuilder(contigs.get(0).getSequence().subSequence(0, Kmer.KSIZE - 1));
+            final StringBuilder sb =
+                    new StringBuilder(contigs.get(0).getSequence().subSequence(0, Kmer.KSIZE - 1));
             for ( final Contig contig : contigs ) {
                 final CharSequence seq = contig.getSequence();
                 sb.append(seq.subSequence(Kmer.KSIZE - 1, seq.length()));
@@ -2022,10 +2129,17 @@ public class LocalAssembler extends PairWalker {
         }
 
         public static Traversal combine( final Traversal trav1, final Traversal trav2 ) {
+            return combineOverlappers(trav1, trav2, 1);
+        }
+
+        public static Traversal combineOverlappers( final Traversal trav1,
+                                                    final Traversal trav2,
+                                                    final int overlapLen ) {
             final int len2 = trav2.contigs.size();
-            final List<Contig> combinedList = new ArrayList<>(trav1.contigs.size() + len2 - 1);
+            final List<Contig> combinedList =
+                    new ArrayList<>(trav1.contigs.size() + len2 - overlapLen);
             combinedList.addAll(trav1.contigs);
-            combinedList.addAll(trav2.contigs.subList(1, len2));
+            combinedList.addAll(trav2.contigs.subList(overlapLen, len2));
             return new Traversal(combinedList);
         }
     }

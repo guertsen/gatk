@@ -244,6 +244,11 @@ public final class GermlineCNVSegmentVariantComposer extends GermlineCNVVariantC
                     //the joint segmentation goes through a lot of trouble to correct genotypes for overlapping events
                     if (cohortVC.hasGenotype(sampleName)) {
                         genotypeBuilder.alleles(cohortVC.getGenotype(sampleName).getAlleles());
+                        if (!uniquifiedAlleles.contains(cohortVC.getReference())) {
+                            uniquifiedAlleles.remove(REF_ALLELE);
+                            uniquifiedAlleles.add(cohortVC.getReference());
+                            variantContextBuilder.alleles(uniquifiedAlleles);
+                        }
                     }
                 } else {
                     logger.warn("No matching cohort VC at " + segment.getContig() + ":" + segment.getStart());

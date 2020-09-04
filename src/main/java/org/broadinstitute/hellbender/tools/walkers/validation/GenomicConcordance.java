@@ -10,6 +10,7 @@ import org.broadinstitute.barclay.argparser.Argument;
 import org.broadinstitute.barclay.argparser.CommandLineProgramProperties;
 import org.broadinstitute.hellbender.engine.ReadsContext;
 import org.broadinstitute.hellbender.engine.ReferenceContext;
+import org.broadinstitute.hellbender.exceptions.UserException;
 import picard.cmdline.programgroups.VariantEvaluationProgramGroup;
 import picard.sam.util.Pair;
 
@@ -52,12 +53,14 @@ public class GenomicConcordance extends Concordance {
             shortName = CONFIDENCE_CONCORDANCE_HISTOGRAM_SHORT_NAME)
     protected File confidenceConcordanceHistogramFile;
 
+    // TODO this should be a Histogram<Pair<Integer, Integer>>, however, the MetricsFile class cannot read
+    // arbitrary types, therefore, it must be converted to a String, which is probably much slower
     @VisibleForTesting
-    final Histogram<Pair<Integer, Integer>> truthBlockHistogram = new Histogram<>();
+    final Histogram<String> truthBlockHistogram = new Histogram<>();
     @VisibleForTesting
-    final Histogram<Pair<Integer, Integer>> evalBlockHistogram = new Histogram<>();
+    final Histogram<String> evalBlockHistogram = new Histogram<>();
     @VisibleForTesting
-    final Histogram<Pair<Integer, Integer>> confidenceConcordanceHistogram = new Histogram<>();
+    final Histogram<String> confidenceConcordanceHistogram = new Histogram<>();
 
     private VariantContext currentTruthVariantContext = null;
     private VariantContext currentEvalVariantContext = null;
@@ -79,7 +82,7 @@ public class GenomicConcordance extends Concordance {
             int blockEnd = Math.min(currentTruthVariantContext.getEnd(), currentEvalVariantContext.getEnd());
             int jointBlockLength = blockEnd - blockStart + 1;
             if (jointBlockLength > 0) {
-                confidenceConcordanceHistogram.increment(new Pair<>(currentTruthVariantContext.getGenotype(0).getGQ(), currentEvalVariantContext.getGenotype(0).getGQ()), jointBlockLength);
+                confidenceConcordanceHistogram.increment(new Pair<>(currentTruthVariantContext.getGenotype(0).getGQ(), currentEvalVariantContext.getGenotype(0).getGQ()).toString(), jointBlockLength);
             }
         }
 
@@ -118,7 +121,7 @@ public class GenomicConcordance extends Concordance {
             // It is possible that jointBlockLength is negative if there is a gap in one file and the start of a new block in the other file.
             // Since there is no overlap though, we can just skip that case.
             if (jointBlockLength > 0) {
-                confidenceConcordanceHistogram.increment(new Pair<>(currentTruthVariantContext.getGenotype(0).getGQ(), currentEvalVariantContext.getGenotype(0).getGQ()), blockEnd - blockStart + 1);
+                confidenceConcordanceHistogram.increment(new Pair<>(currentTruthVariantContext.getGenotype(0).getGQ(), currentEvalVariantContext.getGenotype(0).getGQ()).toString(), blockEnd - blockStart + 1);
             }
 
             int currentPosition = truthVersusEval.getTruthIfPresentElseEval().getStart();
@@ -144,7 +147,7 @@ public class GenomicConcordance extends Concordance {
             }
             Genotype genotype = truthVersusEval.getTruth().getGenotype(0);
             int gq = genotype.getGQ();
-            truthBlockHistogram.increment(new Pair<>(blockLength, gq));
+            truthBlockHistogram.increment(new Pair<>(blockLength, gq).toString());
         }
 
         // Eval
@@ -160,7 +163,7 @@ public class GenomicConcordance extends Concordance {
             }
             Genotype genotype = truthVersusEval.getEval().getGenotype(0);
             int gq = genotype.getGQ();
-            evalBlockHistogram.increment(new Pair<>(blockLength, gq));
+            evalBlockHistogram.increment(new Pair<>(blockLength, gq).toString());
         }
     }
 
@@ -171,7 +174,7 @@ public class GenomicConcordance extends Concordance {
         evaluateEndOfContig();
 
         // Truth histogram
-        MetricsFile<?, Pair<Integer, Integer>> metricsFile = getMetricsFile();
+        MetricsFile<?, String> metricsFile = getMetricsFile();
         metricsFile.addHistogram(truthBlockHistogram);
         metricsFile.write(truthBlockHistogramFile);
 

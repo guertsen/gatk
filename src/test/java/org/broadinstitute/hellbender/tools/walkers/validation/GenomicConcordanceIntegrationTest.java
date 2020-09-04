@@ -70,8 +70,8 @@ public class GenomicConcordanceIntegrationTest extends CommandLineProgramTest{
 
     @Test
     public void customTestTODODelete() throws Exception {
-        final File truthVcf = new File("/home/broad/tmp_data", "CHMI_CHMI3_WGS1.chr20.g.vcf");
-        final File evalVcf = new File("/home/broad/tmp_data", "CHMI_CHMI3_WGS1gvcf.hard-filtered.chr20.gvcf.gz");
+        final File truthVcf = new File("/home/broad/tmp_data", "CHMI_CHMI3_WGS1.g.vcf.gz");
+        final File evalVcf = new File("/home/broad/tmp_data", "CHMI_CHMI3_WGS1gvcf.hard-filtered.gvcf.gz");
         final File summary = new File("/home/broad/Desktop", "summary.txt");
         final File truthBlockHistogramFile = new File("/home/broad/Desktop", "truth_block_histogram.tsv");
         final File evalBlockHistogramFile = new File("/home/broad/Desktop", "eval_block_histogram.tsv");
